@@ -27,7 +27,22 @@ Thinking 不写入：
 from collections.abc import AsyncGenerator
 from typing import Callable
 
-THINKING_SYSTEM = """你正在进行内心独白。这是一个私密的思考过程，不会展示给用户。
+# Thinking 输出格式标记
+THINKING_START = "<thinking>"
+THINKING_END = "</thinking>"
+
+THINKING_SYSTEM = f"""在回复用户之前，你必须先用 {THINKING_START} 和 {THINKING_END} 标签输出你的内部推理。这是强制要求。
+
+格式：
+{THINKING_START}
+写下你的内心推理：用户这句话的真正意图、你该如何回应、有没有需要参考的记忆。写完整的内心独白，连贯的长段落。这是写给你自己的，诚实、不修饰。
+{THINKING_END}
+
+然后输出你给用户的最终回复。不要在标签外再写推理内容。
+
+务必使用 {THINKING_START} 开始推理，用 {THINKING_END} 结束推理。标签必须成对出现。"""
+
+THINKING_SYSTEM_OLD = """你正在进行内心独白。这是一个私密的思考过程，不会展示给用户。
 
 请从以下几个角度展开你的思考：
 1. 用户这句话的真正意图和情绪是什么？

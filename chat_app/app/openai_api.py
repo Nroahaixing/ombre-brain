@@ -162,26 +162,14 @@ async def stream_openai_chat(
         conv_id=conv_id,
     )
 
-    # 3. Thinking 模式：先独立推理，再正式回答
-    thinking_result = ""
-    if thinking_enabled:
-        from app.thinking import THINKING_SYSTEM
-        thinking_system = ctx["system"] + "\n\n" + THINKING_SYSTEM
-        thinking_msgs = [{"role": "system", "content": thinking_system}]
-        thinking_msgs.append({"role": "user", "content": message})
+    # 3. Thinking 模式：切换到 deepseek-reasoner（原生推理）
+    actual_model = model
+    if thinking_enabled and model == "deepseek-chat":
+        actual_model = "deepseek-reasoner"
+        print(f"[THINKING] switched model: {model} → {actual_model}", flush=True)
 
-        thinking_result = await _call_api(api_key, provider["base_url"], model, thinking_msgs)
-        if thinking_result:
-            yield {"event": "thinking", "text": thinking_result}
-
-    # 4. 正常调用（如果 thinking 了，把推理摘要加入 system）
-    final_system = ctx["system"]
-    if thinking_result:
-        # 将推理浓缩成一句话注入，帮助你保持一致性
-        summary = thinking_result[:500]  # 只取前 500 字符
-        final_system += f"\n\n<internal_thought>\n{summary}\n</internal_thought>\n请基于以上思考直接输出最终回答。"
-
-    messages = [{"role": "system", "content": final_system}]
+    # 4. 构建最终消息
+    messages = [{"role": "system", "content": ctx["system"]}]
     messages.extend(ctx["messages"])
 
     logger.info(
@@ -190,44 +178,23 @@ async def stream_openai_chat(
         thinking_enabled, ctx["stats"]["has_retrieved"],
     )
 
+    # 5. 流式输出
+    # DeepSeek reasoner 原生返回 reasoning_content
     full_text = ""
-    async for chunk in _stream_api(api_key, provider["base_url"], model, messages):
-        if chunk.get("event") == "delta":
-            full_text += chunk.get("text", "")
+
+    async for chunk in _stream_api(api_key, provider["base_url"], actual_model, messages):
+        if chunk.get("event") == "thinking":
+            yield chunk
+        elif chunk.get("event") == "delta":
+            text = chunk.get("text", "")
+            full_text += text
+            yield chunk
+        elif chunk.get("event") == "done":
             yield chunk
         elif chunk.get("event") == "done":
             yield chunk
 
     logger.info("chat_done: conv=%s len=%d", conv_id[:8], len(full_text))
-
-
-async def _call_api(api_key: str, base_url: str, model: str, messages: list) -> str:
-    """非流式调用 API（使用 httpx 避免 aiohttp 冲突）"""
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 2048,
-                },
-            )
-            if resp.status_code != 200:
-                logger.error(f"Thinking API error {resp.status_code}: {resp.text[:100]}")
-                return ""
-            data = resp.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return ""
 
 
 async def _stream_api(
@@ -263,6 +230,10 @@ async def _stream_api(
                     try:
                         data = json.loads(data_str)
                         delta = data.get("choices", [{}])[0].get("delta", {})
+                        # DeepSeek reasoner 原生 reasoning_content
+                        reasoning = delta.get("reasoning_content", "")
+                        if reasoning:
+                            yield {"event": "thinking", "text": reasoning}
                         content = delta.get("content", "")
                         if content:
                             yield {"event": "delta", "text": content}
