@@ -210,10 +210,11 @@ class ChatBody(BaseModel):
     session_id: str | None = Field(default=None, max_length=256)
     edit_message_id: int | None = Field(default=None, ge=1)
     retry_message_id: int | None = Field(default=None, ge=1)
-    model: str = Field(default="claude-sonnet-4-6", max_length=64)
+    model: str = Field(default="deepseek-chat", max_length=64)
     effort: str = Field(default="medium", max_length=16)
     extended: bool = True
     attachments: list[str] = Field(default_factory=list, max_length=10)
+    thinking_enabled: bool = False
 
 
 class ToolCaptionBody(BaseModel):
@@ -302,6 +303,21 @@ async def index() -> FileResponse:
 async def memory_health() -> dict:
     """检查 Ombre-Brain 长期记忆服务状态"""
     return await asyncio.to_thread(memory_health_check)
+
+
+@app.get("/api/thinking/status")
+async def thinking_status() -> dict:
+    """获取 Thinking 模式状态"""
+    from app.thinking import thinking_mode
+    return {"enabled": thinking_mode.enabled}
+
+
+@app.post("/api/thinking/toggle")
+async def thinking_toggle() -> dict:
+    """切换 Thinking 模式"""
+    from app.thinking import thinking_mode
+    new_state = thinking_mode.toggle()
+    return {"enabled": new_state}
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -475,7 +491,9 @@ async def chat(body: ChatBody) -> StreamingResponse:
                 chat_stream = stream_codex_chat(*chat_args)
                 first_chunk = await chat_stream.__anext__()
             elif body.model.startswith(("gpt-", "deepseek-")):
-                chat_stream = stream_openai_chat(*chat_args)
+                # 传入 thinking_enabled
+                chat_stream = stream_openai_chat(
+                    *chat_args, thinking_enabled=body.thinking_enabled)
                 first_chunk = await chat_stream.__anext__()
             else:
                 try:
