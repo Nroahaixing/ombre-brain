@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sqlite3
 import uuid
@@ -9,12 +10,13 @@ from typing import Any
 from claude_agent_sdk import delete_session, list_sessions
 
 
-ROOT = Path("/home/ggcuser/codex-work/agent-app")
+ROOT = Path(__file__).resolve().parent.parent
 PROJECT_DIR = str(ROOT)
-DB_PATH = ROOT / "conversations.db"
-SESSION_DIR = Path(
-    "/home/ggcuser/.claude/projects/-home-ggcuser-codex-work-agent-app"
-)
+DB_PATH = ROOT / "data" / "conversations.db"
+SESSION_DIR = Path(os.environ.get(
+    "CLAUDE_PROJECT_DIR",
+    str(Path.home() / ".claude" / "projects"),
+))
 SESSION_ID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )

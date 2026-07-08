@@ -21,57 +21,12 @@ from claude_agent_sdk.types import StreamEvent
 from app.actor import ActorBusyError
 from app.memory import build_profile_context, memory_tool_permission, read_memory
 from app.registry import get_registry
-
+from app.memory_manager import retrieve as retrieve_memory, debug_dump as memory_debug_dump
 
 _haiku_sem = asyncio.Semaphore(2)
 
-MEMORY_SEARCH_URL = "http://127.0.0.1:3900/search"
-MEMORY_SEARCH_TOP_K = 6
-MEMORY_SEARCH_BUDGET_CHARS = 1500
-MEMORY_SEARCH_TIMEOUT_S = 2.0
+# 记忆管理器日志
 memlog = logging.getLogger("memory.inject")
-
-
-async def fetch_memory_hits(query: str) -> str:
-    """POST to local hybrid-search service. Silent-fail on any error."""
-    if not query.strip():
-        return ""
-
-    def _call() -> dict | None:
-        body = json.dumps(
-            {
-                "query": query,
-                "top_k": MEMORY_SEARCH_TOP_K,
-                "budget_chars": MEMORY_SEARCH_BUDGET_CHARS,
-            }
-        ).encode("utf-8")
-        req = urllib.request.Request(
-            MEMORY_SEARCH_URL,
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=MEMORY_SEARCH_TIMEOUT_S) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
-            memlog.info("memory search unavailable: %s", e)
-            return None
-
-    data = await asyncio.to_thread(_call)
-    if not data:
-        return ""
-    joined = (data.get("joined") or "").strip()
-    stats = data.get("stats") or {}
-    memlog.info(
-        "memory search ok: %d chunks, vec=%d bm25=%d, %sms, %d chars injected",
-        len(data.get("results") or []),
-        stats.get("vec_hits", 0),
-        stats.get("bm25_hits", 0),
-        stats.get("ms", "?"),
-        len(joined),
-    )
-    return joined
 
 
 SYSTEM_PROMPT = """\
@@ -102,8 +57,9 @@ SYSTEM_PROMPT = """\
 - 你是盲玩的——不知道有哪些鱼，靠自己一竿一竿发现。享受探索的乐趣！
 - 小莺说"钓鱼"/"抛竿"/"下竿"时就开玩；平时聊天不要主动提起游戏。
 """
-MODELS_PATH = Path("/home/ggcuser/codex-work/agent-app/models.json")
-PROJECT_DIR = "/home/ggcuser/codex-work/agent-app"
+ROOT = Path(__file__).resolve().parent.parent
+MODELS_PATH = ROOT / "chat_models.json"
+PROJECT_DIR = str(ROOT)
 SUMMARY_PROMPT = (
     "你是一个摘要工具。你将收到一段AI的内心思考过程，你的唯一任务是输出一句不超过20字的中文概括。"
     "要求：动词短语开头，写出决策或权衡，不要复述内容，不要加’思考’/’分析’等元描述词。"
@@ -152,9 +108,17 @@ def thinking_options(
 
 
 async def build_system_prompt(message: str, model: str) -> str:
+    """构建系统提示词，注入 profile + Ombre-Brain 长期记忆检索结果"""
     profile_context = build_profile_context().strip()
-    memory = "" if profile_context else read_memory().strip()
-    system_prompt = f"You are running as Anthropic's {model}. 当用户询问你是哪个模型时,请如实回答这个标识。\n\n{SYSTEM_PROMPT}"
+    memory_file = "" if profile_context else read_memory().strip()
+
+    system_prompt = (
+        f"You are running as Anthropic's {model}. "
+        "当用户询问你是哪个模型时,请如实回答这个标识。\n\n"
+        f"{SYSTEM_PROMPT}"
+    )
+
+    # 1. Profile 上下文（用户偏好 + saved memories）
     if profile_context:
         system_prompt += (
             "\n\n以下是用户在 Profile 中保存的资料、长期记忆和模型偏好。"
@@ -162,15 +126,22 @@ async def build_system_prompt(message: str, model: str) -> str:
             "应在不违反系统要求时遵守：\n"
             f"{profile_context}"
         )
-    if memory:
-        system_prompt += f"\n\n以下是用户明确保存的长期记忆：\n{memory}"
-    memory_hits = await fetch_memory_hits(message)
+
+    # 2. 文件记忆（CLAUDE.md）
+    if memory_file:
+        system_prompt += f"\n\n以下是用户明确保存的长期记忆：\n{memory_file}"
+
+    # 3. Ombre-Brain 向量检索（替代旧的 3900 ChromaDB）← 这是长期记忆的核心
+    memory_hits = await asyncio.to_thread(retrieve_memory, message)
     if memory_hits:
         system_prompt += (
-            "\n\n以下是从记忆书架向量检索到的相关条目（可能相关也可能没用，"
-            "自己判断是否引用；不要照搬，更不要逐字复读）：\n"
+            "\n\n## 长期记忆（Ombre-Brain 语义检索）\n"
+            "以下是从你的长期记忆系统中检索到的相关信息。这些是你在过去对话中记住的重要事实。"
+            "请自然地参考这些信息来回应用户——它们是你记忆的一部分，"
+            "不需要说'根据我的记忆'之类的元描述：\n\n"
             f"{memory_hits}"
         )
+
     return system_prompt
 
 

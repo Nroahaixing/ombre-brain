@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from typing import Any
 from starlette.formparsers import MultiPartParser
 
-MultiPartParser.max_part_size = 60 * 1024 * 1024  # 与 uploads.py 的 MAX_FILE_BYTES 对齐
+MultiPartParser.max_part_size = 60 * 1024 * 1024
 
 from app import auth
 from app.actor import ActorBusyError
@@ -46,7 +46,7 @@ from app.memory import (
     write_memory,
     write_profile,
 )
-from app.memory_search import recall as recall_memory
+from app.memory_manager import retrieve as retrieve_from_ombre, extract_and_save_facts, debug_dump as memory_debug_dump, health_check as memory_health_check
 from app.sessions import (
     remove_session,
     session_list,
@@ -77,7 +77,7 @@ from app.uploads import (
 
 logger = logging.getLogger(__name__)
 timing_logger = logging.getLogger("uvicorn.error")
-STATIC = ROOT / "static"
+STATIC = ROOT / "frontend"  # 指向前端目录（Chatnest 聊天 UI）
 chat_lock = asyncio.Lock()
 initialize_store()
 TRACE_CONTENT_CHARS = 20_000
@@ -88,6 +88,24 @@ def trace_content(value: Any) -> str:
     if len(text) <= TRACE_CONTENT_CHARS:
         return text
     return text[:TRACE_CONTENT_CHARS] + "\n\n[output truncated]"
+
+
+async def _post_chat_memory_save(user_msg: str, assistant_reply: str, conv_id: str) -> None:
+    """Fire-and-forget: 从对话中提取重要事实，存入 Ombre-Brain 长期记忆"""
+    try:
+        saved = await asyncio.to_thread(extract_and_save_facts, user_msg, assistant_reply)
+        if saved:
+            logger.info(f"post-chat memory saved {len(saved)} facts for conv={conv_id[:8]}")
+            if MEMORY_DEBUG:
+                logger.info(f"  facts: {saved}")
+    except Exception:
+        logger.exception("post-chat memory save failed")
+
+
+# ============================================================
+# Memory Debug Mode
+# ============================================================
+MEMORY_DEBUG = os.environ.get("MEMORY_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 @asynccontextmanager
@@ -278,6 +296,12 @@ async def index() -> FileResponse:
     )
 
 
+@app.get("/api/memory-health")
+async def memory_health() -> dict:
+    """检查 Ombre-Brain 长期记忆服务状态"""
+    return await asyncio.to_thread(memory_health_check)
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> Response:
     return Response(status_code=204)
@@ -425,14 +449,16 @@ async def chat(body: ChatBody) -> StreamingResponse:
                 if context_messages
                 else display_message
             )
-            recalled = recall_memory(display_message)
+            # 长期记忆检索（Ombre-Brain）—— 异步执行，不阻塞聊天
+            recalled = await asyncio.to_thread(retrieve_from_ombre, display_message)
             if recalled:
                 prompt = (
-                    "<recalled-memory>\n"
-                    "以下是从家用记忆里检索到的相关片段，按相关度排序。"
-                    "可能与小莺这次说的事相关，参考着用——不相关就忽略，不要为了用而用。\n\n"
+                    "<long-term-memory>\n"
+                    "以下是从长期记忆中检索到的相关信息，按相关度排序。"
+                    "这些是你记住的关于用户的事实——自然地参考它们，"
+                    "就像人类回忆过去对话一样。不相关就忽略，不要为了用而用。\n\n"
                     f"{recalled}\n"
-                    "</recalled-memory>\n\n"
+                    "</long-term-memory>\n\n"
                     f"{prompt}"
                 )
             if current_attachment_items and not context_messages:
@@ -530,6 +556,18 @@ async def chat(body: ChatBody) -> StreamingResponse:
                     chunk["conversation_id"] = conv_id
                     chunk["assistant_message_id"] = assistant_message_id
                     branch_committed = True
+
+                    # ===== 聊天后自动保存长期记忆 =====
+                    # 从这轮对话中提取重要事实，静默存入 Ombre-Brain
+                    asyncio.create_task(_post_chat_memory_save(
+                        display_message, response_text, conv_id
+                    ))
+
+                    # ===== Memory Debug 输出 =====
+                    if MEMORY_DEBUG:
+                        debug_info = await asyncio.to_thread(memory_debug_dump)
+                        if debug_info:
+                            yield f"event: debug\ndata: {json.dumps({'text': debug_info}, ensure_ascii=False)}\n\n"
                 name = chunk.pop("event")
                 data = json.dumps(chunk, ensure_ascii=False)
                 yield f"event: {name}\ndata: {data}\n\n"
