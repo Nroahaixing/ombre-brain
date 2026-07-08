@@ -1,12 +1,21 @@
-"""Registry for the single warm Claude conversation actor."""
+"""Registry for the single warm Claude conversation actor.
+当 claude_agent_sdk 不可用时静默降级（DeepSeek/OpenAI 模式无需 SDK）。
+"""
 
 import asyncio
+import logging
 from collections.abc import Callable
 from time import monotonic
 
-from claude_agent_sdk import ClaudeAgentOptions
+logger = logging.getLogger(__name__)
 
-from app.actor import ActorBusyError, ConvActor
+try:
+    from claude_agent_sdk import ClaudeAgentOptions
+    from app.actor import ActorBusyError, ConvActor
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    logger.info("claude_agent_sdk not installed — Claude agent mode disabled")
 
 
 IDLE_TTL_SECONDS = 900
@@ -104,17 +113,29 @@ class ConvRegistry:
                         self._actor = None
 
 
-registry: ConvRegistry | None = None
+class NoopRegistry:
+    """空注册表 — SDK 不可用时的降级方案"""
+    async def start(self) -> None: pass
+    async def stop(self) -> None: pass
+    async def invalidate(self) -> None: pass
+    async def submit(self, *args, **kwargs): raise RuntimeError("Claude SDK not available — use OpenAI/DeepSeek backend")
+    async def assert_available(self) -> None: pass
 
 
-def configure_registry(project_dir: str) -> ConvRegistry:
-    global registry
-    if registry is None:
-        registry = ConvRegistry(project_dir)
-    return registry
+_registry: ConvRegistry | NoopRegistry | None = None
 
 
-def get_registry() -> ConvRegistry:
-    if registry is None:
-        raise RuntimeError("Claude registry 尚未启动")
-    return registry
+def configure_registry(project_dir: str):
+    global _registry
+    if SDK_AVAILABLE:
+        _registry = ConvRegistry(project_dir)
+    else:
+        _registry = NoopRegistry()
+    return _registry
+
+
+def get_registry():
+    if _registry is None:
+        raise RuntimeError("Registry 尚未启动")
+    return _registry
+
