@@ -10,7 +10,7 @@ from typing import Any
 from claude_agent_sdk import delete_session, list_sessions
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent  # chat_app/app/* → repo root
 PROJECT_DIR = str(ROOT)
 DB_PATH = ROOT / "data" / "conversations.db"
 SESSION_DIR = Path(os.environ.get(

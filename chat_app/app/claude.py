@@ -55,7 +55,7 @@ SYSTEM_PROMPT = """\
 - 你是盲玩的——不知道有哪些鱼，靠自己一竿一竿发现。享受探索的乐趣！
 - 小莺说"钓鱼"/"抛竿"/"下竿"时就开玩；平时聊天不要主动提起游戏。
 """
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent  # chat_app/app/claude.py → repo root
 MODELS_PATH = ROOT / "chat_models.json"
 PROJECT_DIR = str(ROOT)
 SUMMARY_PROMPT = (

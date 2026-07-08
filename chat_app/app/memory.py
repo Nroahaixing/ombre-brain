@@ -10,7 +10,7 @@ from uuid import uuid4
 from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
 # 使用环境变量或项目根目录
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent  # chat_app/app/* → repo root
 DATA_DIR = Path(os.environ.get("CHAT_DATA_DIR", ROOT / "data"))
 MEMORY_PATH = DATA_DIR / "CLAUDE.md"
 PROJECT_PATH = DATA_DIR

@@ -14,7 +14,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent  # chat_app/app/main.py → repo root
 load_dotenv(ROOT / ".env")
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -36,6 +36,7 @@ from app.claude import (
     summarize_traces,
 )
 from app.codex_api import stream_codex_chat
+from app.openai_api import stream_openai_chat
 from app.memory import (
     MAX_MEMORY_CHARS,
     add_saved_memory,
@@ -472,6 +473,9 @@ async def chat(body: ChatBody) -> StreamingResponse:
                          body.effort, body.extended, log_timing)
             if body.model == "codex":
                 chat_stream = stream_codex_chat(*chat_args)
+                first_chunk = await chat_stream.__anext__()
+            elif body.model == "gpt-4o-mini" or body.model.startswith("gpt-"):
+                chat_stream = stream_openai_chat(*chat_args)
                 first_chunk = await chat_stream.__anext__()
             else:
                 try:
