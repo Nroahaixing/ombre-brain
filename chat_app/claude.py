@@ -4,8 +4,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import urllib.error
-import urllib.request
 from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 
