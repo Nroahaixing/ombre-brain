@@ -214,7 +214,7 @@ class ChatBody(BaseModel):
     effort: str = Field(default="medium", max_length=16)
     extended: bool = True
     attachments: list[str] = Field(default_factory=list, max_length=10)
-    thinking_enabled: bool = False
+    thinking_enabled: bool = True
 
 
 class ToolCaptionBody(BaseModel):

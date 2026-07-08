@@ -139,7 +139,7 @@ async def stream_openai_chat(
     effort: str = "medium",
     extended: bool = True,
     timing_callback: Callable[[str], None] | None = None,
-    thinking_enabled: bool = False,
+    thinking_enabled: bool = True,
 ) -> AsyncGenerator[dict, None]:
     """Stream chat via OpenAI-compatible API."""
 
