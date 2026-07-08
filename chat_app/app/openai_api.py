@@ -225,7 +225,8 @@ async def _call_api(api_key: str, base_url: str, model: str, messages: list) -> 
             data = resp.json()
             return data.get("choices", [{}])[0].get("message", {}).get("content", "")
     except Exception as e:
-        logger.error(f"Thinking API exception: {e}")
+        import traceback
+        traceback.print_exc()
         return ""
 
 
