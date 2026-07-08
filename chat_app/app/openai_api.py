@@ -11,8 +11,7 @@ import aiohttp
 from collections.abc import AsyncGenerator, Callable
 from uuid import uuid4
 
-from app.context_builder import build_context, count_tokens
-from app.memory_manager import retrieve as retrieve_memory
+from app.prompt_builder import build_prompt
 from app.store import conversation_messages
 
 logger = logging.getLogger(__name__)
@@ -148,34 +147,32 @@ async def stream_openai_chat(
     if not api_key:
         raise RuntimeError(f"{provider['api_key_env']} 未配置")
 
-    # 1. 检索记忆
-    recalled = await _async_retrieve(message)
+    # 1. 使用 Prompt Builder 构建完整上下文
     history_msgs, _, _ = conversation_messages(conv_id)
-
-    # 2. 构建统一上下文
-    ctx = build_context(
+    ctx = await build_prompt(
         system_prompt=SYSTEM_PROMPT,
-        relationship_memory="",  # injected via system prompt already
         messages=list(history_msgs),
-        retrieved_memories=recalled,
         current_message=message,
         conv_id=conv_id,
     )
 
-    # 3. Thinking 模式：切换到 deepseek-reasoner（原生推理）
+    # 2. Thinking 模式：切换到 deepseek-reasoner（原生推理）
     actual_model = model
     if thinking_enabled and model == "deepseek-chat":
         actual_model = "deepseek-reasoner"
-        print(f"[THINKING] switched model: {model} → {actual_model}", flush=True)
 
-    # 4. 构建最终消息
+    # 3. 构建最终消息
     messages = [{"role": "system", "content": ctx["system"]}]
     messages.extend(ctx["messages"])
 
     logger.info(
-        "chat: conv=%s model=%s tokens=%d thinking=%s retrieved=%s",
+        "chat: conv=%s model=%s tokens=%d thinking=%s modules={persona:%d,env:%d,rel:%d,retrieved:%d}",
         conv_id[:8], model, ctx["stats"]["total_tokens"],
-        thinking_enabled, ctx["stats"]["has_retrieved"],
+        thinking_enabled,
+        ctx["stats"]["persona_tokens"],
+        ctx["stats"]["environment_tokens"],
+        ctx["stats"]["relationship_tokens"],
+        ctx["stats"]["retrieved_tokens"],
     )
 
     # 5. 流式输出

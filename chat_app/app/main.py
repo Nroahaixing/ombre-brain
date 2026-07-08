@@ -806,6 +806,37 @@ async def splash() -> dict:
     return {"period": period, "line": random_line(period)}
 
 
+@app.get("/api/debug/context")
+async def debug_context(conv_id: str = "") -> dict:
+    """Developer Debug Panel — 实时显示上下文状态"""
+    from app.session_forge import session_stats as sf_stats
+    from app.relationship_manager import load_state as rel_state
+    from app.environment_manager import get_time_context, get_weather_context
+    from app.memory_manager import retrieve as mem_retrieve
+    from app.context_builder import get_summary
+
+    result: dict[str, Any] = {
+        "time": get_time_context(),
+        "relationship": rel_state(),
+        "conversation": sf_stats(conv_id) if conv_id else {},
+        "summary": get_summary(conv_id) if conv_id else "",
+        "memory_retrieved": "",
+    }
+
+    # Sample memory retrieval
+    sample = await asyncio.to_thread(mem_retrieve, "recent")
+    result["memory_retrieved"] = sample[:300] if sample else "(empty)"
+
+    # Ombre-Brain health
+    try:
+        health = await asyncio.to_thread(memory_health_check)
+        result["ombre_health"] = health
+    except Exception:
+        result["ombre_health"] = {"status": "unreachable"}
+
+    return result
+
+
 @app.get("/api/models")
 async def models() -> dict:
     return {"models": available_models()}
