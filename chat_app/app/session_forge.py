@@ -27,10 +27,15 @@ def session_handoff(conv_id: str) -> dict[str, Any]:
     生成 Session 交接文档。
     包含：最近对话摘要、当前话题、Token 使用量。
     """
-    summary = get_summary(conv_id)
-    msgs, _, _ = conversation_messages(conv_id)
+    try:
+        msgs, _, _ = conversation_messages(conv_id)
+    except Exception:
+        return {
+            "conv_id": conv_id, "timestamp": datetime.now().isoformat(),
+            "summary": "", "recent_tail": "", "message_count": 0, "total_tokens": 0,
+        }
 
-    # 最近 5 轮对话作为 tail
+    summary = get_summary(conv_id)
     recent = msgs[-10:] if len(msgs) > 10 else msgs
     tail_lines = []
     for m in recent:
@@ -39,15 +44,13 @@ def session_handoff(conv_id: str) -> dict[str, Any]:
         if text.strip():
             tail_lines.append(f"{role}: {text}")
 
-    total_tokens = sum(count_tokens(m.get("text", "")) for m in msgs)
-
     return {
         "conv_id": conv_id,
         "timestamp": datetime.now().isoformat(),
         "summary": summary or "（暂无摘要）",
         "recent_tail": "\n".join(tail_lines),
         "message_count": len(msgs),
-        "total_tokens": total_tokens,
+        "total_tokens": sum(count_tokens(m.get("text", "")) for m in msgs),
     }
 
 
@@ -69,12 +72,19 @@ def session_restore_prompt(handoff: dict[str, Any]) -> str:
 
 def session_stats(conv_id: str) -> dict[str, Any]:
     """获取当前 Session 统计"""
-    msgs, _, _ = conversation_messages(conv_id)
-    total_tokens = sum(count_tokens(m.get("text", "")) for m in msgs)
+    try:
+        msgs, _, _ = conversation_messages(conv_id)
+        total_tokens = sum(count_tokens(m.get("text", "")) for m in msgs)
+        msg_count = len(msgs)
+    except Exception:
+        msgs = []
+        total_tokens = 0
+        msg_count = 0
+
     summary = get_summary(conv_id)
 
     return {
-        "message_count": len(msgs),
+        "message_count": msg_count,
         "total_tokens": total_tokens,
         "has_summary": bool(summary),
         "timestamp": time.time(),
