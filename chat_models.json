@@ -3,6 +3,8 @@
   { "id": "claude-opus-4-8",             "label": "Opus 4.8",      "desc": "For complex tasks",                 "thinking": "adaptive", "primary": true  },
   { "id": "claude-sonnet-4-6",           "label": "Sonnet 4.6",    "desc": "Most efficient for everyday tasks", "thinking": "adaptive", "primary": true  },
   { "id": "claude-haiku-4-5",             "label": "Haiku 4.5",     "desc": "Fastest for quick answers",         "thinking": "extended", "primary": true  },
+  { "id": "deepseek-chat",               "label": "DeepSeek V3",   "desc": "DeepSeek 最新旗舰",                 "thinking": "none",     "primary": true  },
+  { "id": "deepseek-reasoner",           "label": "DeepSeek R1",   "desc": "DeepSeek 深度推理",                 "thinking": "none",     "primary": false },
   { "id": "gpt-4o-mini",                 "label": "GPT-4o Mini",   "desc": "OpenAI 快速低价",                   "thinking": "none",     "primary": true  },
   { "id": "codex",                       "label": "Codex",         "desc": "OpenAI coding agent",               "thinking": "none",     "primary": true  },
   { "id": "claude-opus-4-7",             "label": "Opus 4.7",      "desc": "Previous generation",               "thinking": "adaptive", "primary": false },

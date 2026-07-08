@@ -474,7 +474,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
             if body.model == "codex":
                 chat_stream = stream_codex_chat(*chat_args)
                 first_chunk = await chat_stream.__anext__()
-            elif body.model == "gpt-4o-mini" or body.model.startswith("gpt-"):
+            elif body.model.startswith(("gpt-", "deepseek-")):
                 chat_stream = stream_openai_chat(*chat_args)
                 first_chunk = await chat_stream.__anext__()
             else:

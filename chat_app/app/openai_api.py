@@ -133,16 +133,24 @@ async def stream_openai_chat(
 
     messages.append({"role": "user", "content": message})
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY 未配置")
+    # 选择 API provider
+    if model.startswith("deepseek-"):
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        api_base = "https://api.deepseek.com"
+        if not api_key:
+            raise RuntimeError("DEEPSEEK_API_KEY 未配置")
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        api_base = "https://api.openai.com/v1"
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY 未配置")
 
-    # Call OpenAI API
+    # Call API (DeepSeek is OpenAI-compatible)
     import aiohttp
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
-            "https://api.openai.com/v1/chat/completions",
+            f"{api_base}/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

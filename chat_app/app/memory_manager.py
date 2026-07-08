@@ -26,7 +26,7 @@ import logging
 import os
 import re
 from typing import Any
-from urllib import request, error
+import httpx
 
 logger = logging.getLogger("memory.manager")
 
@@ -120,35 +120,31 @@ def should_save_fact(text: str) -> tuple[bool, str, str]:
 
 
 # ============================================================
-# Ombre-Brain API 调用
+# Ombre-Brain API 调用（使用 httpx，比 urllib 更可靠）
 # ============================================================
 
 def _http_post(path: str, payload: dict, timeout: float = TIMEOUT) -> dict | None:
     """调用 Ombre-Brain HTTP API。静默失败。"""
     try:
-        data = json.dumps(payload).encode("utf-8")
-        req = request.Request(
-            f"{OMBRE_URL}{path}",
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (error.URLError, OSError, json.JSONDecodeError, TimeoutError) as e:
-        logger.warning(f"Ombre-Brain API 调用失败 ({path}): {e}")
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(f"{OMBRE_URL}{path}", json=payload)
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+    except Exception as e:
+        logger.warning(f"Ombre-Brain POST 失败 ({path}): {e}")
         return None
 
 
-def _http_get(path: str, timeout: float = TIMEOUT) -> dict | None:
+def _http_get(path: str, timeout: float = TIMEOUT) -> list | dict | None:
     try:
-        req = request.Request(
-            f"{OMBRE_URL}{path}",
-            headers={"Content-Type": "application/json"},
-        )
-        with request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (error.URLError, OSError, json.JSONDecodeError, TimeoutError) as e:
-        logger.warning(f"Ombre-Brain API 调用失败 ({path}): {e}")
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(f"{OMBRE_URL}{path}")
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+    except Exception as e:
+        logger.warning(f"Ombre-Brain GET 失败 ({path}): {e}")
         return None
 
 
@@ -168,9 +164,9 @@ def retrieve(query: str, budget_chars: int = 2000, top_k: int = 8) -> str:
         debug_log("Memory Retrieve", "query too short, skipped")
         return ""
 
-    # Ombre-Brain /api/search 是 GET 端点（不是 POST）
-    import urllib.parse
-    encoded_q = urllib.parse.quote(q)
+    # Ombre-Brain /api/search 是 GET 端点
+    from urllib.parse import quote
+    encoded_q = quote(q)
     data = _http_get(f"/api/search?q={encoded_q}")
     if not data:
         debug_log("Memory Retrieve", "API 调用失败或返回空")
