@@ -13,8 +13,13 @@ from app.claude import (
     thinking_options,
 )
 from app.store import conversation_messages
+from app.context_manager import count_tokens
 
 logger = logging.getLogger(__name__)
+
+# API 路径的 token 限制
+MAX_API_HISTORY_TOKENS = 60_000
+MAX_API_ROUNDS = 20  # API 路径保留最近 20 轮
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
@@ -22,20 +27,38 @@ def _get_client() -> anthropic.AsyncAnthropic:
 
 
 def _build_history(conv_id: str) -> list[dict]:
-    """Reconstruct Anthropic API messages array from stored conversation."""
+    """
+    构建 Anthropic API messages 数组。
+    自动裁剪超过 token 限制的历史消息。
+    """
     rows, _, _ = conversation_messages(conv_id)
     messages: list[dict] = []
-    for msg in rows:
+    total_tokens = 0
+
+    # 从最新消息开始取，控制在 token 限制内
+    for msg in reversed(rows):
         role = msg["role"]
         text = msg.get("text") or ""
         thinking = msg.get("thinking") or ""
+
+        msg_tokens = count_tokens(text) + count_tokens(thinking)
+        if total_tokens + msg_tokens > MAX_API_HISTORY_TOKENS:
+            break  # 超出限制，停止添加更旧的消息
+
         if role == "assistant" and thinking:
             content = [{"type": "thinking", "thinking": thinking, "signature": ""}]
             if text:
                 content.append({"type": "text", "text": text})
-            messages.append({"role": "assistant", "content": content})
+            messages.insert(0, {"role": "assistant", "content": content})
         elif text:
-            messages.append({"role": role, "content": text})
+            messages.insert(0, {"role": role, "content": text})
+
+        total_tokens += msg_tokens
+
+    # 如果仍然太多，只保留最近 N 轮
+    if len(messages) > MAX_API_ROUNDS * 2:
+        messages = messages[-(MAX_API_ROUNDS * 2):]
+
     return messages
 
 

@@ -47,6 +47,7 @@ from app.memory import (
     write_profile,
 )
 from app.memory_manager import retrieve as retrieve_from_ombre, extract_and_save_facts, debug_dump as memory_debug_dump, health_check as memory_health_check
+from app.context_manager import build_chat_context, count_tokens
 from app.sessions import (
     remove_session,
     session_list,
@@ -565,8 +566,22 @@ async def chat(body: ChatBody) -> StreamingResponse:
 
                     # ===== Memory Debug 输出 =====
                     if MEMORY_DEBUG:
+                        # 获取历史消息统计
+                        _, conv_msgs, _ = session_messages(conv_id)
+                        conv_history_len = len(conv_msgs)
+                        conv_tokens = count_tokens(
+                            "\n".join(m.get("text", "") for m in conv_msgs)
+                        ) if conv_msgs else 0
+
                         debug_info = await asyncio.to_thread(memory_debug_dump)
-                        if debug_info:
+                        # 补充会话统计
+                        debug_info = debug_info.replace(
+                            "===== Memory Debug =====",
+                            f"===== Memory Debug =====\n"
+                            f"Conversation History: {conv_history_len} messages, ~{conv_tokens} tokens\n"
+                            f"Response Length: {len(response_text)} chars, ~{count_tokens(response_text)} tokens"
+                        )
+                        if debug_info.strip():
                             yield f"event: debug\ndata: {json.dumps({'text': debug_info}, ensure_ascii=False)}\n\n"
                 name = chunk.pop("event")
                 data = json.dumps(chunk, ensure_ascii=False)
