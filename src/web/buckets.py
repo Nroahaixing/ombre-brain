@@ -73,6 +73,39 @@ def register(mcp) -> None:
             return JSONResponse({"error": str(e)}, status_code=500)
 
 
+    @mcp.custom_route("/api/buckets", methods=["POST"])
+    async def api_buckets_create(request: Request) -> Response:
+        """Create a new memory bucket from JSON body (used by Chatnest bridge)."""
+        from starlette.responses import JSONResponse
+        import json as _json
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid JSON"}, status_code=400)
+
+        content = (body.get("content") or "").strip()
+        if not content:
+            return JSONResponse({"error": "content is required"}, status_code=400)
+
+        tags = body.get("tags", "")
+        importance = int(body.get("importance", 5))
+        source = body.get("source", "api")
+
+        try:
+            # 通过 bucket_mgr.create() 创建桶，并自动触发 hold 逻辑
+            bucket_id = await sh.bucket_mgr.create(
+                content=content,
+                domain=tags if isinstance(tags, str) else ",".join(tags or []),
+                importance=min(max(importance, 1), 10),
+                source_tool=source,
+            )
+            return JSONResponse({"ok": True, "bucket_id": bucket_id})
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
     @mcp.custom_route("/api/bucket/{bucket_id}", methods=["GET"])
     async def api_bucket_detail(request: Request) -> Response:
         """Get full bucket content by ID."""

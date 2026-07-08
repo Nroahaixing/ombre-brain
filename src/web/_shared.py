@@ -363,8 +363,18 @@ def _set_session_cookie(resp: Response, token: str, request: Request) -> None:
 
 
 def _require_auth(request: Request) -> Response | None:
-    """Return JSONResponse(401) if not authenticated, else None."""
+    """Return JSONResponse(401) if not authenticated, else None.
+
+    例外：127.0.0.1 / localhost 请求免认证。
+    这样同一台机器上的 Chatnest 后端可以直连 Ombre-Brain 记忆 API。
+    """
     from starlette.responses import JSONResponse
+
+    # 本地请求免认证 — Chatnest 记忆桥接用
+    client_host = request.client.host if request.client else ""
+    if client_host in ("127.0.0.1", "::1", "localhost"):
+        return None
+
     if not _is_authenticated(request):
         return JSONResponse(
             {"error": "Unauthorized", "setup_needed": _is_setup_needed()},

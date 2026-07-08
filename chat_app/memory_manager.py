@@ -159,7 +159,7 @@ def _http_get(path: str, timeout: float = TIMEOUT) -> dict | None:
 def retrieve(query: str, budget_chars: int = 2000, top_k: int = 8) -> str:
     """
     聊天前检索相关记忆。
-    调用 Ombre-Brain /api/search 做语义+关键词双通道检索。
+    调用 Ombre-Brain GET /api/search?q= 做语义+关键词检索。
 
     返回: 格式化的记忆文本，可直接加入 prompt
     """
@@ -168,21 +168,25 @@ def retrieve(query: str, budget_chars: int = 2000, top_k: int = 8) -> str:
         debug_log("Memory Retrieve", "query too short, skipped")
         return ""
 
-    data = _http_post("/api/search", {"query": q, "limit": top_k})
+    # Ombre-Brain /api/search 是 GET 端点（不是 POST）
+    import urllib.parse
+    encoded_q = urllib.parse.quote(q)
+    data = _http_get(f"/api/search?q={encoded_q}")
     if not data:
         debug_log("Memory Retrieve", "API 调用失败或返回空")
         return ""
 
-    results = data.get("results", [])
+    # Ombre-Brain 返回的是数组 [{id, name, score, domain, content_preview, ...}]
+    results = data if isinstance(data, list) else data.get("results", [])
     if not results:
         debug_log("Memory Retrieve", f"检索成功但无结果 (query={q[:50]})")
         return ""
 
     lines = []
     for r in results[:top_k]:
-        content = r.get("content", "")[:300]
+        content = r.get("content_preview", r.get("content", ""))[:300]
         domain = r.get("domain", "")
-        bucket_id = r.get("bucket_id", r.get("id", ""))
+        bucket_id = r.get("id", "")
         if content.strip():
             domain_tag = f"[{domain}]" if domain else ""
             lines.append(f"- {domain_tag} {content}")
