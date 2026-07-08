@@ -570,9 +570,9 @@ async def chat(body: ChatBody) -> StreamingResponse:
 
                     # ===== Memory Debug 输出 =====
                     if MEMORY_DEBUG:
-                        # 获取历史消息统计
-                        _, conv_msgs, _ = session_messages(conv_id)
-                        conv_history_len = len(conv_msgs)
+                        # 获取历史消息统计 (session_messages → (list, bool, int|None))
+                        conv_msgs, _, _ = session_messages(conv_id)
+                        conv_history_len = len(conv_msgs) if conv_msgs else 0
                         conv_tokens = count_tokens(
                             "\n".join(m.get("text", "") for m in conv_msgs)
                         ) if conv_msgs else 0
